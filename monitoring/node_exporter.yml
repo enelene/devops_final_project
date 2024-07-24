@@ -1,0 +1,47 @@
+---
+- name: Install and set up Node Exporter
+  hosts: all
+  become: true
+  vars:
+    node_exporter_version: "1.8.2"  # Node Exporter version
+
+  tasks:
+    - name: Install required packages
+      yum:
+        name:
+          - wget
+          - tar
+          - make
+        state: present
+
+    - name: Download Node Exporter binary
+      get_url:
+        url: https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz
+        dest: /tmp/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz
+
+    - name: Extract Node Exporter binary
+      unarchive:
+        src: /tmp/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz
+        dest: /tmp/
+        remote_src: yes
+
+    - name: Create Node Exporter user
+      user:
+        name: node_exporter
+        shell: /sbin/nologin
+        system: true
+
+    - name: Copy binary to appropriate location
+      command: cp /tmp/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter /usr/local/bin/
+
+    - name: Create Node Exporter service
+      copy:
+        src: node_exporter.service
+        dest: /etc/systemd/system/node_exporter.service
+        mode: 0644
+
+    - name: Enable and start Node Exporter service
+      systemd:
+        name: node_exporter
+        enabled: true
+        state: started

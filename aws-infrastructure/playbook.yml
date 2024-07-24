@@ -1,0 +1,97 @@
+- name: Set up Docker container with mario game
+  hosts: all
+  become: yes
+  tasks:
+    - name: Check if amazon-linux-extras exists
+      stat:
+        path: /usr/bin/amazon-linux-extras
+      register: ale_exists
+
+    - name: Install Docker (Amazon Linux 2)
+      block:
+        - name: Install Docker using amazon-linux-extras
+          command: amazon-linux-extras install docker -y
+      when: ale_exists.stat.exists
+
+    - name: Install Docker (Amazon Linux 2023 or other)
+      block:
+        - name: Update package cache
+          yum:
+            update_cache: yes
+        - name: Install Docker
+          yum:
+            name: docker
+            state: present
+      when: not ale_exists.stat.exists
+
+    - name: Start and enable Docker service
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+    
+    - name: Copy Dockerfile to the instance
+      copy:
+        src: Dockerfile
+        dest: /home/ec2-user/Dockerfile
+
+    - name: Add ec2-user to docker group
+      user:
+        name: ec2-user
+        groups: docker
+        append: yes
+
+    - name: Install Nginx
+      yum:
+        name: nginx
+        state: present
+
+    - name: Stop Nginx to free up port 80
+      systemd:
+        name: nginx
+        state: stopped
+
+    - name: Build Docker image
+      command: docker build -t 2048-game /home/ec2-user/
+
+    - name: Run Docker container on port 8080
+      command: docker run -d -p 8080:80 --name 2048-game 2048-game
+
+    - name: Configure Nginx for health checks
+      copy:
+        dest: /etc/nginx/conf.d/health_check.conf
+        content: |
+          server {
+              listen 80;
+              location / {
+                  return 200 'OK';
+                  add_header Content-Type text/plain;
+              }
+          }
+
+    - name: Configure Nginx to proxy to Docker container on port 8080
+      copy:
+        dest: /etc/nginx/conf.d/game.conf
+        content: |
+          server {
+              listen 80;
+              server_name quizweb.online;
+
+              location / {
+                  proxy_pass http://localhost:8080;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+              }
+          }
+
+    - name: Restart Nginx
+      systemd:
+        name: nginx
+        state: restarted
+
+
+
+        10.0.6.93
+        10.0.5.50
